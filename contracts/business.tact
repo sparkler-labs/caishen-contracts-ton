@@ -8,6 +8,7 @@
 // 求签（3.5）与 resume_draw（3.6）在后续任务落地。
 
 import "./jetton";
+import "./nft";
 
 message(0x7bdd97de) BizExcesses {
     queryId: Int as uint64;
@@ -42,6 +43,14 @@ contract IncenseDraw {
     // 上香 query_id 幂等（design D6：chain + deployment + query_id + operation）
     processedIncense: map<Int as uint64, Bool>;
 
+    // 求签（3.5，design D5）：query_id → {requester, itemIndex, state}
+    // state：1=已消耗并发出铸造命令（3.6 处理铸造中断的恢复语义）
+    drawRequests: map<Int as uint64, DrawRequest>;
+    // 求签 MERIT 金库：8 MERIT 消耗移入（EVM 版为 burn，TON 版金库化——
+    // 消耗离源语义等价，销毁机制由 3.7/3.8 演练定案）
+    drawTreasury: Int as coins;
+    drawCount: Int as uint64;
+
     init(admin: Address, jettonMaster: Address, nftCollection: Address, decimals: Int, startTime: Int, decreaseCoefficient: Int, totalSupplyByDay: Int, mintPrice: Int) {
         self.admin = admin;
         self.jettonMaster = jettonMaster;
@@ -55,6 +64,8 @@ contract IncenseDraw {
         self.remainingSupply = 0;
         self.lastDecrement = 0;
         self.dayMintNum = 0;
+        self.drawTreasury = 0;
+        self.drawCount = 0;
     }
 
     // 空消息接收：普通转账不抛错
@@ -162,6 +173,66 @@ contract IncenseDraw {
         }
     }
 
+    // 求签消耗：8 MERIT（EVM drawFortune 同额）
+    fun drawCost(): Int {
+        return 8 * pow(10, self.decimals);
+    }
+
+    // 仅接受由登记 Jetton Master 推导的用户 Jetton Wallet（design D5：
+    // 绝不信任消息自报 sender——msg.from 必须能推导出实际 sender）
+    fun masterWalletAddress(owner: Address): Address {
+        return contractAddress(initOf JettonWallet(owner, self.jettonMaster));
+    }
+
+    // 求签入口：用户 Jetton Wallet 的 TokenTransferInternal 到达
+    // （forwardPayload = queryId as uint64），验证 → 消耗登记 → NFT 铸造命令
+    receive(msg: TokenTransferInternal) {
+        require(context().sender == self.masterWalletAddress(msg.from), "Unauthorized draw source");
+        require(msg.amount >= self.drawCost(), "Insufficient MERIT for draw");
+
+        let queryId: Int = msg.forwardPayload.loadUint(64);
+        require(self.drawRequests.get(queryId) == null, "Duplicate draw query id");
+
+        self.drawTreasury = self.drawTreasury + msg.amount;
+        let itemIndex: Int = self.drawCount;
+        self.drawCount = self.drawCount + 1;
+        self.drawRequests.set(queryId, DrawRequest {
+            requester: msg.from,
+            itemIndex: itemIndex,
+            state: 1,
+        });
+
+        // NFT 铸造命令：本合约 = Collection 的 minter（3.3）；item content 空 Cell
+        // —— TEP-62 惯例，钱包回退到 collection content + index（metadata 接口 3.8 接线）
+        send(SendParameters {
+            to: self.nftCollection,
+            value: ton("0.1"),
+            mode: SendPayGasSeparately,
+            bounce: false,
+            body: MintNFT {
+                queryId: queryId,
+                toOwner: msg.from,
+                metadata: emptyCell(),
+            }.toCell(),
+        });
+    }
+
+    get fun draw_request(queryId: Int): DrawRequest? {
+        return self.drawRequests.get(queryId);
+    }
+
+    get fun draw_treasury(): Int {
+        return self.drawTreasury;
+    }
+
+    get fun draw_count(): Int {
+        return self.drawCount;
+    }
+
+    get fun draw_cost(): Int {
+        return self.drawCost();
+    }
+
     get fun incense_price(): Int {
         return self.mintPrice;
     }
@@ -198,6 +269,12 @@ contract IncenseDraw {
             decreaseCoefficient: self.decreaseCoefficient,
         };
     }
+}
+
+struct DrawRequest {
+    requester: Address;
+    itemIndex: Int as uint64;
+    state: Int as uint8;
 }
 
 struct ContractConfig {

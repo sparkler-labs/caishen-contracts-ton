@@ -7,7 +7,7 @@ import { Address, beginCell, toNano } from '@ton/core';
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
 import { describe, expect, test } from '@jest/globals';
 
-import { NftCollection, storeMintNFT, storeNFTTransfer } from '../output/CaishenNft_NftCollection';
+import { NftCollection, storeMintNFT, storeNFTTransfer, storeSetNftMinter } from '../output/CaishenNft_NftCollection';
 import { NftItem } from '../output/CaishenNft_NftItem';
 
 // TEP-64 snake 格式 #1：0x01 前缀 + off-chain URI（钱包可识别形态）
@@ -46,7 +46,7 @@ describe('签文 NFT Collection/Item', () => {
     const outsider = await blockchain.treasury('outsider');
 
     const collection: SandboxContract<NftCollection> = blockchain.openContract(
-      await NftCollection.fromInit(admin.address, minter.address, tep64Content('https://caishenye.net/ton/collection.json')),
+      await NftCollection.fromInit(admin.address, tep64Content('https://caishenye.net/ton/collection.json')),
     );
 
     const deployResult = await admin.send({
@@ -55,6 +55,13 @@ describe('签文 NFT Collection/Item', () => {
       init: collection.init,
     });
     expect(deployResult.transactions).toHaveTransaction({ to: collection.address, success: true });
+
+    // minter 登记（主业务合约地址）
+    await admin.send({
+      to: collection.address,
+      value: toNano('0.05'),
+      body: beginCell().store(storeSetNftMinter({ $$type: 'SetNftMinter' as const, minter: minter.address })).endCell(),
+    });
 
     async function mint(queryId: bigint, toOwner: Address) {
       return minter.send({

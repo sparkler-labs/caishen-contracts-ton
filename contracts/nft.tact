@@ -33,16 +33,21 @@ message OwnershipTransferred {
     queryId: Int as uint64;
 }
 
+// minter 登记（与 JettonMaster SetMinter 同构）：owner 部署后一次性登记主业务合约。
+message SetNftMinter {
+    minter: Address;
+}
+
 contract NftCollection {
     owner: Address;
-    minter: Address;
+    minter: Address?;
     nextItemIndex: Int as uint64;
     collectionContent: Cell;
     nftItemCode: Cell;
 
-    init(owner: Address, minter: Address, collectionContent: Cell) {
+    init(owner: Address, collectionContent: Cell) {
         self.owner = owner;
-        self.minter = minter;
+        self.minter = null;
         self.nextItemIndex = 0;
         self.collectionContent = collectionContent;
         self.nftItemCode = initOf NftItem(myAddress(), 0).code;
@@ -75,8 +80,16 @@ contract NftCollection {
         self.nextItemIndex = self.nextItemIndex + 1;
     }
 
+    // 主业务合约登记（一次性）：business 的 init 含 collection 地址，collection
+    // 的 minter 含 business 地址，后置登记打破循环。
+    receive(msg: SetNftMinter) {
+        require(context().sender == self.owner, "Unauthorized minter setup");
+        require(self.minter == null, "Minter has been set");
+        self.minter = msg.minter;
+    }
+
     fun isAuthorizedMinter(sender: Address): Bool {
-        return sender == self.owner || sender == self.minter;
+        return sender == self.owner || (self.minter != null && sender == self.minter!!);
     }
 
     fun itemAddress(index: Int): Address {

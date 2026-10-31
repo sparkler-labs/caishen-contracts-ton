@@ -13,7 +13,7 @@ message(0x5fcc3d14) NFTTransfer {
     forwardPayload: Slice as remaining;
 }
 
-message(0x0f8a7ea5) MintNFT {
+message(0x25d1b7f9) MintNFT {
     queryId: Int as uint64;
     toOwner: Address;
     metadata: Cell;

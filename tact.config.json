@@ -1,0 +1,19 @@
+{
+  "projects": [
+    {
+      "name": "CaishenJetton",
+      "path": "./contracts/jetton.tact",
+      "output": "./output"
+    },
+    {
+      "name": "CaishenNft",
+      "path": "./contracts/nft.tact",
+      "output": "./output"
+    },
+    {
+      "name": "CaishenBusiness",
+      "path": "./contracts/business.tact",
+      "output": "./output"
+    }
+  ]
+}

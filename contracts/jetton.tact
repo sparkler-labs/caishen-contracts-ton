@@ -22,6 +22,12 @@ message(0x17804522) TokenTransferInternal {
     forwardPayload: Slice as remaining;
 }
 
+// bounced 前缀镜像（同 op，仅含 256 bits 内可解析字段）：供 bounced 接收回滚
+message(0x17804522) TokenTransferInternalPrefix {
+    queryId: Int as uint64;
+    amount: Int as coins;
+}
+
 message(0x595f07bc) TokenBurn {
     queryId: Int as uint64;
     amount: Int as coins;
@@ -206,6 +212,14 @@ contract JettonWallet {
             }.toCell(),
         });
         self.cashback(msg.responseDestination);
+    }
+
+    // 下游接收方失败时的 bounce 回滚（TEP-74：bounced 消息体仅保前 256 bits，
+    // op+queryId+coins 足以恢复金额）——否则接收合约 abort 后 MERIT 凭空消失。
+    // 完整 TokenTransferInternal 含 optional 字段不能直接 bounced 接收，
+    // 按文档用同 op 紧凑镜像解析前缀。
+    bounced(msg: TokenTransferInternalPrefix) {
+        self.balance = self.balance + msg.amount;
     }
 
     receive(msg: TokenTransferInternal) {

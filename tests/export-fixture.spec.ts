@@ -10,7 +10,7 @@ import { test } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { IncenseDraw, storeIncensePayment } from '../output/CaishenBusiness_IncenseDraw';
+import { IncenseDraw, loadIncensePayment, storeIncensePayment } from '../output/CaishenBusiness_IncenseDraw';
 import { JettonMaster, loadMint, loadTokenTransferInternal, storeMint, storeSetMinter } from '../output/CaishenJetton_JettonMaster';
 import { JettonWallet } from '../output/CaishenJetton_JettonWallet';
 import { NftCollection, loadInitNftItem, loadItemDeployed, loadMintNFT, storeSetNftMinter } from '../output/CaishenNft_NftCollection';
@@ -43,6 +43,10 @@ function parseMessage(body: any): any {
     const m = parse(loadMint);
     return { kind: 'Mint', op: op.toString(16), query_id: m.queryId.toString(), amount: m.amount.toString(), receiver: addrKey(m.receiver) };
   }
+  if (op === 0x805c4914) {
+    const m = parse(loadIncensePayment);
+    return { kind: 'IncensePayment', op: op.toString(16), query_id: m.queryId.toString() };
+  }
   if (op === 0x7bdd97de) {
     return { kind: 'TokenExcesses', op: op.toString(16) };
   }
@@ -70,7 +74,7 @@ function serializeTx(t: any) {
   const body = inMsg?.body;
   return {
     hash: Buffer.from(t.hash()).toString('base64'),
-    lt: inMsg?.lt?.toString() ?? '0',
+    lt: (t.lt ?? inMsg?.lt ?? 0).toString(),
     now: t.now,
     account: addrKey(inMsg?.info?.dest ?? {}),
     src: inMsg?.info?.src ? addrKey(inMsg.info.src) : null,

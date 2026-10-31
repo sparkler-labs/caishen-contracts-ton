@@ -119,7 +119,7 @@ contract JettonMaster {
         if (msg.responseAddress != null) {
             send(SendParameters {
                 to: msg.responseAddress!!,
-                value: 0,
+                value: ton("0.05"),
             mode: SendPayGasSeparately,
                 bounce: false,
                 body: TokenExcesses { queryId: msg.queryId }.toCell(),
@@ -133,7 +133,7 @@ contract JettonMaster {
 
     fun cashback(to: Address?) {
         if (to != null) {
-            send(SendParameters { to: to!!, value: 0, mode: SendPayGasSeparately, bounce: false, body: TokenExcesses{ queryId: 0 }.toCell() });
+            send(SendParameters { to: to!!, value: ton("0.05"), mode: SendPayGasSeparately, bounce: false, body: TokenExcesses{ queryId: 0 }.toCell() });
         }
     }
 
@@ -214,7 +214,7 @@ contract JettonWallet {
         if (msg.forwardTonAmount > 0) {
             send(SendParameters {
                 to: self.owner,
-                value: 0,
+                value: ton("0.05"),
             mode: SendPayGasSeparately,
                 bounce: false,
                 body: TokenNotification {
@@ -234,7 +234,7 @@ contract JettonWallet {
         self.balance = self.balance - msg.amount;
         send(SendParameters {
             to: self.master,
-            value: 0,
+            value: ton("0.05"),
             mode: SendPayGasSeparately,
             bounce: false,
             body: TokenBurnNotification {
@@ -252,7 +252,7 @@ contract JettonWallet {
 
     fun cashback(to: Address?) {
         if (to != null) {
-            send(SendParameters { to: to!!, value: 0, mode: SendPayGasSeparately, bounce: false, body: TokenExcesses{ queryId: 0 }.toCell() });
+            send(SendParameters { to: to!!, value: ton("0.05"), mode: SendPayGasSeparately, bounce: false, body: TokenExcesses{ queryId: 0 }.toCell() });
         }
     }
 

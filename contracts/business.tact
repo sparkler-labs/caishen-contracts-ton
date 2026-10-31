@@ -18,6 +18,11 @@ message IncensePayment {
     queryId: Int as uint64;
 }
 
+// 求签恢复（design D5）：仅登记请求者可触发，不再次扣 MERIT
+message ResumeDraw {
+    queryId: Int as uint64;
+}
+
 contract IncenseDraw {
     // 部署清单（3.8）登记的关联合约
     admin: Address;
@@ -43,8 +48,8 @@ contract IncenseDraw {
     // 上香 query_id 幂等（design D6：chain + deployment + query_id + operation）
     processedIncense: map<Int as uint64, Bool>;
 
-    // 求签（3.5，design D5）：query_id → {requester, itemIndex, state}
-    // state：1=已消耗并发出铸造命令（3.6 处理铸造中断的恢复语义）
+    // 求签（3.5/3.6，design D5）：query_id → {requester, itemIndex, state}
+    // state：0=已消耗铸造待确认（可 resume）1=已铸造（ItemDeployed 回执确认）
     drawRequests: map<Int as uint64, DrawRequest>;
     // 求签 MERIT 金库：8 MERIT 消耗移入（EVM 版为 burn，TON 版金库化——
     // 消耗离源语义等价，销毁机制由 3.7/3.8 演练定案）
@@ -169,7 +174,7 @@ contract IncenseDraw {
 
     fun cashback(to: Address?) {
         if (to != null) {
-            send(SendParameters { to: to!!, value: 0, mode: SendPayGasSeparately, bounce: false, body: BizExcesses{ queryId: 0 }.toCell() });
+            send(SendParameters { to: to!!, value: ton("0.05"), mode: SendPayGasSeparately, bounce: false, body: BizExcesses{ queryId: 0 }.toCell() });
         }
     }
 
@@ -199,7 +204,7 @@ contract IncenseDraw {
         self.drawRequests.set(queryId, DrawRequest {
             requester: msg.from,
             itemIndex: itemIndex,
-            state: 1,
+            state: 0,
         });
 
         // NFT 铸造命令：本合约 = Collection 的 minter（3.3）；item content 空 Cell
@@ -212,6 +217,42 @@ contract IncenseDraw {
             body: MintNFT {
                 queryId: queryId,
                 toOwner: msg.from,
+                metadata: emptyCell(),
+            }.toCell(),
+        });
+    }
+
+    // 铸造回执：状态推进到已铸（仅信任登记 Collection 的消息）
+    receive(msg: ItemDeployed) {
+        require(context().sender == self.nftCollection, "Unauthorized deploy receipt");
+        let stored: DrawRequest? = self.drawRequests.get(msg.queryId);
+        require(stored != null, "Unknown deploy receipt");
+        let request: DrawRequest = stored!!;
+        require(request.itemIndex == msg.itemIndex, "Item index mismatch");
+        self.drawRequests.set(msg.queryId, DrawRequest {
+            requester: request.requester,
+            itemIndex: request.itemIndex,
+            state: 1,
+        });
+    }
+
+    // resume_draw（design D5）：已消耗铸造未确认时，仅登记请求者可重发铸造命令；
+    // 不再次扣 MERIT；Collection 对 query_id 幂等，重复恢复至多一枚 NFT
+    receive(msg: ResumeDraw) {
+        let stored: DrawRequest? = self.drawRequests.get(msg.queryId);
+        require(stored != null, "Unknown draw request");
+        let request: DrawRequest = stored!!;
+        require(context().sender == request.requester, "Only the requester can resume");
+        require(request.state == 0, "Draw already minted");
+
+        send(SendParameters {
+            to: self.nftCollection,
+            value: ton("0.1"),
+            mode: SendPayGasSeparately,
+            bounce: false,
+            body: MintNFT {
+                queryId: msg.queryId,
+                toOwner: request.requester,
                 metadata: emptyCell(),
             }.toCell(),
         });

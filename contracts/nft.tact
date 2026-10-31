@@ -19,14 +19,22 @@ message(0x0f8a7ea5) MintNFT {
     metadata: Cell;
 }
 
+// 铸造回执：item 部署完成（design D5 状态机——business 据此置 state=已铸）
+message ItemDeployed {
+    queryId: Int as uint64;
+    itemIndex: Int as uint64;
+    stickNo: Int as uint8;
+}
+
 message(0x7bdd97de) NftExcesses {
     queryId: Int as uint64;
 }
 
-// 部署消息体：仅 Collection 可发，覆写 owner/content（StateInit 不含它们）。
+// 部署消息体：仅 Collection 可发，覆写 owner/content/stickNo（StateInit 不含它们）。
 message InitNftItem {
     owner: Address;
     content: Cell;
+    stickNo: Int as uint8;
 }
 
 message OwnershipTransferred {
@@ -44,6 +52,9 @@ contract NftCollection {
     nextItemIndex: Int as uint64;
     collectionContent: Cell;
     nftItemCode: Cell;
+    // 对 (minter, query_id) 幂等（design D5：同一消耗至多一枚 NFT；单 collection
+    // 单 minter，query_id 键足够）——resume 重发铸造命令时拦住重复部署
+    processedMints: map<Int as uint64, Bool>;
 
     init(owner: Address, collectionContent: Cell) {
         self.owner = owner;
@@ -51,6 +62,7 @@ contract NftCollection {
         self.nextItemIndex = 0;
         self.collectionContent = collectionContent;
         self.nftItemCode = initOf NftItem(myAddress(), 0).code;
+        self.processedMints = emptyMap();
     }
 
     // 空消息接收：部署与普通转账不抛错
@@ -64,7 +76,20 @@ contract NftCollection {
     // owner/content 经 InitNftItem 消息体覆写。
     receive(msg: MintNFT) {
         require(self.isAuthorizedMinter(context().sender), "Unauthorized mint");
+        // (minter, query_id) 幂等：重复铸造命令（resume 重发）不重复部署
+        require(self.processedMints.get(msg.queryId) == null, "Duplicate mint query id");
 
+        // 签号（design D4，EVM 事后确定式伪随机同语义）：
+        // hash(collection + item index + 原求签者 + 铸造时间) % 60 + 1，铸造时间
+        // 为本交易时刻；持久化进 item 业务数据（后端 4.4 从 get-method 核对）
+        let stickNo: Int = (beginCell()
+            .storeAddress(myAddress())
+            .storeUint(self.nextItemIndex, 64)
+            .storeAddress(msg.toOwner)
+            .storeUint(now(), 64)
+            .endCell().hash() % 60) + 1;
+
+        self.processedMints.set(msg.queryId, true);
         send(SendParameters {
             to: self.itemAddress(self.nextItemIndex),
             value: ton("0.05"),
@@ -75,8 +100,24 @@ contract NftCollection {
             body: InitNftItem {
                 owner: msg.toOwner,
                 content: msg.metadata,
+                stickNo: stickNo,
             }.toCell(),
         });
+
+        // 部署回执给 minter（business 状态机推进）
+        if (self.minter != null) {
+            send(SendParameters {
+                to: self.minter!!,
+                value: ton("0.05"),
+                mode: SendPayGasSeparately,
+                bounce: false,
+                body: ItemDeployed {
+                    queryId: msg.queryId,
+                    itemIndex: self.nextItemIndex,
+                    stickNo: stickNo,
+                }.toCell(),
+            });
+        }
         self.nextItemIndex = self.nextItemIndex + 1;
     }
 
@@ -98,7 +139,7 @@ contract NftCollection {
 
     fun cashback(to: Address?) {
         if (to != null) {
-            send(SendParameters { to: to!!, value: 0, mode: SendPayGasSeparately, bounce: false, body: NftExcesses{ queryId: 0 }.toCell() });
+            send(SendParameters { to: to!!, value: ton("0.05"), mode: SendPayGasSeparately, bounce: false, body: NftExcesses{ queryId: 0 }.toCell() });
         }
     }
 
@@ -120,12 +161,14 @@ contract NftItem {
     collection: Address;
     index: Int as uint64;
     content: Cell;
+    stickNo: Int as uint8;
 
     init(collection: Address, index: Int) {
         self.owner = collection;
         self.collection = collection;
         self.index = index;
         self.content = emptyCell();
+        self.stickNo = 0;
     }
 
     // 部署初始化：仅 Collection 可发（design D4：只有授权主业务合约能铸造）
@@ -133,6 +176,7 @@ contract NftItem {
         require(context().sender == self.collection, "Unauthorized item init");
         self.owner = msg.owner;
         self.content = msg.content;
+        self.stickNo = msg.stickNo;
     }
 
     receive(msg: NFTTransfer) {
@@ -142,7 +186,7 @@ contract NftItem {
         if (msg.forwardAmount > 0) {
             send(SendParameters {
                 to: msg.newOwner,
-                value: 0,
+                value: ton("0.05"),
                 mode: SendPayGasSeparately,
                 bounce: false,
                 body: OwnershipTransferred { queryId: msg.queryId }.toCell(),
@@ -157,7 +201,7 @@ contract NftItem {
 
     fun cashback(to: Address?) {
         if (to != null) {
-            send(SendParameters { to: to!!, value: 0, mode: SendPayGasSeparately, bounce: false, body: NftExcesses{ queryId: 0 }.toCell() });
+            send(SendParameters { to: to!!, value: ton("0.05"), mode: SendPayGasSeparately, bounce: false, body: NftExcesses{ queryId: 0 }.toCell() });
         }
     }
 
@@ -168,6 +212,11 @@ contract NftItem {
             owner: self.owner,
             content: self.content,
         };
+    }
+
+    // 签号（design D4：合约内确定并持久化，后端从 get-method 核对）
+    get fun get_stick_no(): Int {
+        return self.stickNo;
     }
 }
 

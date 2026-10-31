@@ -20,8 +20,11 @@ describe('IncenseDraw 骨架冒烟', () => {
         admin.address,
         jettonMaster.address,
         nftCollection.address,
+        9n,
+        BigInt(Math.floor(Date.now() / 1000) - 86400),
+        2n,
+        toNano('1000'),
         toNano('0.1'),
-        1000n,
       ),
     );
 

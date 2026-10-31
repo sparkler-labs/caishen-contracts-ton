@@ -53,18 +53,23 @@ message Mint {
     amount: Int as coins;
 }
 
+// minter 登记（对齐 EVM initMeritCoin 时序）：owner 部署后一次性登记主业务合约。
+message SetMinter {
+    minter: Address;
+}
+
 contract JettonMaster {
     totalSupply: Int as coins;
     owner: Address;
-    minter: Address;
+    minter: Address?;
     content: Cell;
     maxSupply: Int as coins;
     decimals: Int as uint8;
 
-    init(owner: Address, minter: Address, content: Cell, maxSupply: Int, decimals: Int) {
+    init(owner: Address, content: Cell, maxSupply: Int, decimals: Int) {
         self.totalSupply = 0;
         self.owner = owner;
-        self.minter = minter;
+        self.minter = null;
         self.content = content;
         self.maxSupply = maxSupply;
         self.decimals = decimals;
@@ -73,8 +78,16 @@ contract JettonMaster {
     // 空消息接收：部署与普通转账不抛错
     receive() {}
 
+    // 主业务合约登记（EVM initMeritCoin 同形：一次性，防循环依赖——business 的
+    // init 含 master 地址，master 的 minter 含 business 地址）。
+    receive(msg: SetMinter) {
+        require(context().sender == self.owner, "Unauthorized minter setup");
+        require(self.minter == null, "Minter has been set");
+        self.minter = msg.minter;
+    }
+
     fun isAuthorizedMinter(sender: Address): Bool {
-        return sender == self.owner || sender == self.minter;
+        return sender == self.owner || (self.minter != null && sender == self.minter!!);
     }
 
     // 授权铸造：总量守恒、maxSupply 上限；钱包经 internal transfer 部署入账。

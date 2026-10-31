@@ -6,7 +6,7 @@ import { Address, beginCell, toNano } from '@ton/core';
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
 import { describe, expect, test } from '@jest/globals';
 
-import { JettonMaster, storeMint } from '../output/CaishenJetton_JettonMaster';
+import { JettonMaster, storeMint, storeSetMinter } from '../output/CaishenJetton_JettonMaster';
 import { JettonWallet } from '../output/CaishenJetton_JettonWallet';
 
 // 设计定案（design D4）：精度由部署清单固定；测试取 TON 惯例 9 位，
@@ -37,7 +37,7 @@ describe('MERIT Jetton 授权铸造', () => {
     const outsider = await blockchain.treasury('outsider');
 
     const master: SandboxContract<JettonMaster> = blockchain.openContract(
-      await JettonMaster.fromInit(admin.address, minter.address, beginCell().endCell(), MAX_SUPPLY, DECIMALS),
+      await JettonMaster.fromInit(admin.address, beginCell().endCell(), MAX_SUPPLY, DECIMALS),
     );
 
     const deployResult = await admin.send({
@@ -46,6 +46,15 @@ describe('MERIT Jetton 授权铸造', () => {
       init: master.init,
     });
     expect(deployResult.transactions).toHaveTransaction({ to: master.address, success: true });
+
+    // minter 登记（EVM initMeritCoin 时序）：主业务合约地址
+    await admin.send({
+      to: master.address,
+      value: toNano('0.05'),
+      body: beginCell()
+        .store(storeSetMinter({ $$type: 'SetMinter' as const, minter: minter.address }))
+        .endCell(),
+    });
 
     return { blockchain, admin, minter, user, outsider, master };
   }

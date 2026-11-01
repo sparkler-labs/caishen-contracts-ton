@@ -13,7 +13,7 @@ import * as path from 'path';
 import { IncenseDraw, loadIncensePayment, storeIncensePayment } from '../output/CaishenBusiness_IncenseDraw';
 import { JettonMaster, loadMint, loadTokenTransferInternal, storeMint, storeSetMinter } from '../output/CaishenJetton_JettonMaster';
 import { JettonWallet } from '../output/CaishenJetton_JettonWallet';
-import { NftCollection, loadInitNftItem, loadItemDeployed, loadMintNFT, storeSetNftMinter } from '../output/CaishenNft_NftCollection';
+import { NftCollection, loadInitNftItem, loadItemDeployed, loadMintNFT, loadNFTTransfer, storeSetNftMinter } from '../output/CaishenNft_NftCollection';
 
 const DECIMALS = 9n;
 const MERIT8 = 8n * 10n ** DECIMALS;
@@ -37,7 +37,15 @@ function parseMessage(body: any): any {
   };
   if (op === 0x17804522) {
     const m = parse(loadTokenTransferInternal);
-    return { kind: 'TokenTransferInternal', op: op.toString(16), query_id: m.queryId.toString(), amount: m.amount.toString(), from: addrKey(m.from) };
+    // 求签入口的 query_id 载于 forwardPayload（合约 loadUint(64)），与消息顶层
+    // queryId 是两个独立字段（测试中设为同值）；后端验证需分别可见
+    let fpQueryId: string | null = null;
+    try {
+      fpQueryId = m.forwardPayload.loadUint(64).toString();
+    } catch {
+      fpQueryId = null;
+    }
+    return { kind: 'TokenTransferInternal', op: op.toString(16), query_id: m.queryId.toString(), amount: m.amount.toString(), from: addrKey(m.from), forward_payload_query_id: fpQueryId };
   }
   if (op === 0xc15edfb9) {
     const m = parse(loadMint);
@@ -55,8 +63,8 @@ function parseMessage(body: any): any {
     return { kind: 'MintNFT', op: op.toString(16), query_id: m.queryId.toString(), to_owner: addrKey(m.toOwner) };
   }
   if (op === 0x5fcc3d14) {
-    const m = parse((s2: any) => (0 as any, s2)); // NFTTransfer 载荷按 3.7 集成断言，不需要解析字段
-    return { kind: 'NFTTransfer', op: op.toString(16) };
+    const m = parse(loadNFTTransfer);
+    return { kind: 'NFTTransfer', op: op.toString(16), new_owner: addrKey(m.newOwner), query_id: m.queryId.toString() };
   }
   if (op === 0x0e219a2e) {
     const m = parse(loadInitNftItem);
@@ -149,6 +157,18 @@ test('导出上香与求签 trace fixture', async () => {
     forwardPayload: beginCell().storeUint(101n, 64).endCell().asSlice(),
   });
 
+  // 转移链（4.5 fixture）：item 0 由 user 转给 admin（NFTTransfer 标准消息）
+  const { NftItem } = await import('../output/CaishenNft_NftItem');
+  const item0 = blockchain.openContract(await NftItem.fromInit(nftCollection.address, 0n));
+  const transferRun = await item0.send(user.getSender(), { value: toNano('0.1') }, {
+    $$type: 'NFTTransfer' as const,
+    queryId: 102n,
+    newOwner: admin.address,
+    responseDestination: user.address,
+    forwardAmount: 0n,
+    forwardPayload: beginCell().endCell().asSlice(),
+  });
+
   const fixture = {
     network: 'sandbox' as const,
     contract_versions: { tact: '1.6.13', generated_from: 'contracts-ton 3.7' },
@@ -167,6 +187,15 @@ test('导出上香与求签 trace fixture', async () => {
     draw_trace: {
       query_id: 101n.toString(),
       transactions: drawRun.transactions.map(serializeTx),
+    },
+    transfer_trace: {
+      query_id: 102n.toString(),
+      item_index: '0',
+      item_address: addrKey(item0.address),
+      nft_collection: addrKey(nftCollection.address),
+      previous_owner: addrKey(user.address),
+      new_owner: addrKey(admin.address),
+      transactions: transferRun.transactions.map(serializeTx),
     },
   };
 

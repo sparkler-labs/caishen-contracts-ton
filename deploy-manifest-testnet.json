@@ -1,0 +1,33 @@
+{
+  "schema_version": "1",
+  "config_version": "ton-testnet-2026-11-01",
+  "chain_id": -3,
+  "public_rpc_url": "https://testnet.toncenter.com/api/v2/jsonRPC",
+  "chain": {
+    "name": "TON Testnet",
+    "chain_family": "ton",
+    "ton_network": "testnet",
+    "native_symbol": "TON",
+    "native_decimals": 9,
+    "environment": "testnet",
+    "status": "enabled",
+    "explorer_url": "https://testnet.tonviewer.com",
+    "expires_at": "2027-01-31T00:00:00Z"
+  },
+  "deployment": {
+    "deployment_id": "ton-testnet-v2",
+    "fortune_god_address": "EQDbFzLleFfy_5MqV6Xo1uhkqph0cG9eaA6-9DFdlsTcOuKs",
+    "merit_coin_address": "EQCRm7IOSjTWGEc66LW_3zCuRKp6wd5JSi6HAC9FrPye3rpH",
+    "fortune_stick_address": "EQDVefGnQivhH3XQsg8eR5ibG8OT80-Rjp-pPUkgEJHOFNmm",
+    "proxy_admin_address": "EQBJueOdGQhKZNK7h_PkBHpL7kjVcT_9DnYrzpAeLTLQBSrP",
+    "fortune_god_impl_address": "EQDbFzLleFfy_5MqV6Xo1uhkqph0cG9eaA6-9DFdlsTcOuKs",
+    "abi_version": "v2",
+    "code_version": "tact-1.6.13-3.7",
+    "status": "active",
+    "is_active": true,
+    "parameters": {
+      "decimals": "9",
+      "mint_price": "100000000"
+    }
+  }
+}

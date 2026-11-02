@@ -65,7 +65,10 @@ contract IncenseDraw {
         self.decreaseCoefficient = decreaseCoefficient;
         self.totalSupplyByDay = totalSupplyByDay;
         self.mintPrice = mintPrice;
-        self.currentDay = 0;
+        // -1 哨兵：部署日（day=0）首笔上香必须触发当日重置（对齐 EVM
+        // updateSupplyByDay flag 语义——EVM initialize 已设 remainingSupply，
+        // 这里 day!=currentDay 判定在 day=0 也为真）
+        self.currentDay = -1;
         self.remainingSupply = 0;
         self.lastDecrement = 0;
         self.dayMintNum = 0;
